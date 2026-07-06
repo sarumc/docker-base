@@ -42,9 +42,15 @@ download_github_asset() {
     release_json=$(curl -s ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
         "https://api.github.com/repos/${repo}/releases/latest")
 
+    # Guard against null/empty responses (private repo, no access, etc.)
+    if [ -z "${release_json}" ] || [ "$(echo "${release_json}" | jq -r 'type')" != "object" ]; then
+        echo ""
+        return
+    fi
+
     local asset_info
     asset_info=$(echo "${release_json}" | jq -r \
-        '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.name)|\(.url)"')
+        '[.assets[]? | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.name)|\(.url)"')
     local asset_name="${asset_info%%|*}"
     local asset_api_url="${asset_info##*|}"
 

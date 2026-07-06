@@ -30,7 +30,8 @@ RUN mkdir -p /baked-plugins \
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     /tmp/install-sarumc-plugins.sh /baked-plugins \
     && rm /tmp/install-sarumc-plugins.sh
-RUN cp -r virions /baked-virions
+RUN cp -r virions /baked-virions \
+    && chown -R pocketmine:pocketmine /baked-virions /opt/pocketmine/virions
 
 # Custom entrypoint wrapper
 COPY entrypoint.sh /entrypoint.sh

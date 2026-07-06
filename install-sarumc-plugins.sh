@@ -21,15 +21,27 @@ for entry in "${REPOS[@]}"; do
     plugin_name="${entry##*:}"
     echo ":: Downloading ${repo} release..."
 
-    ASSET_JSON=$(curl -s -H "${AUTH}" \
-        "https://api.github.com/repos/${repo}/releases/latest" \
-        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.id) \(.name) \(.url)"')
+    RELEASE_JSON=$(curl -s -H "${AUTH}" \
+        "https://api.github.com/repos/${repo}/releases/latest")
+
+    # Check if the API call succeeded (null/empty = private repo or no releases)
+    if [ -z "${RELEASE_JSON}" ] || [ "$(echo "${RELEASE_JSON}" | jq -r 'type')" != "object" ] \
+       || [ "$(echo "${RELEASE_JSON}" | jq -r '.assets // empty')" = "" ]; then
+        echo "   !! No release or no access to ${repo} (check token scope)."
+        echo "   API response: $(echo "${RELEASE_JSON}" | head -c 200)"
+        continue
+    fi
+
+    ASSET_JSON=$(echo "${RELEASE_JSON}" \
+        | jq -r '[.assets[]? | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.id) \(.name) \(.url)"')
     ASSET_ID=$(echo "${ASSET_JSON}" | cut -d' ' -f1)
     ASSET_NAME=$(echo "${ASSET_JSON}" | cut -d' ' -f2)
     ASSET_API_URL=$(echo "${ASSET_JSON}" | cut -d' ' -f3)
 
     if [ -z "${ASSET_ID}" ] || [ "${ASSET_ID}" = "null" ]; then
-        echo "   !! No plugin assets for ${repo}, skipping."
+        echo "   !! No .phar/.zip/.tar.gz assets found for ${repo}."
+        echo "   Available assets:"
+        echo "${RELEASE_JSON}" | jq -r '.assets[]? | "      - \(.name)"' 2>/dev/null || true
         continue
     fi
 
