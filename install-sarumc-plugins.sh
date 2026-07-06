@@ -37,7 +37,7 @@ for entry in "${REPOS[@]}"; do
     DL_FILE="/tmp/plugin-dl-$$"
     curl -fSL -H "${AUTH}" -H "Accept: application/octet-stream" -o "${DL_FILE}" "${ASSET_API_URL}"
 
-    case "${ASSET_URL}" in
+    case "${ASSET_NAME}" in
         *.phar)
             cp "${DL_FILE}" "${PLUGINS_DIR}/${plugin_name}.phar"
             echo "   -> plugins/${plugin_name}.phar"
