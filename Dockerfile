@@ -1,23 +1,20 @@
 FROM php:8.2-cli
 
-# Build-time args for private GitHub repos
-ARG GITHUB_TOKEN=""
 # PMMP version - set to "latest" to auto-detect
 ARG PMMP_VERSION="latest"
 
 # Install system deps + PHP extensions PMMP needs
+# Note: yaml extension optional — PMMP uses Symfony YAML fallback.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
     curl \
     jq \
-    libyaml-dev \
     libzip-dev \
     && docker-php-ext-install -j$(nproc) \
         bcmath \
         gmp \
         sockets \
-        yaml \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -61,9 +58,11 @@ RUN git clone --depth 1 https://github.com/CortexPE/Commando.git /tmp/commando \
     && rm -rf /tmp/commando
 
 # --- SaruMC private plugins ---
-# Script handles download from GitHub releases using token
+# Script handles download from GitHub releases using token.
+# Token passed via BuildKit secret mount — never stored in image layers.
 COPY install-sarumc-plugins.sh /tmp/install-sarumc-plugins.sh
-RUN chmod +x /tmp/install-sarumc-plugins.sh \
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    chmod +x /tmp/install-sarumc-plugins.sh \
     && /tmp/install-sarumc-plugins.sh "${PMMP_DIR}/plugins" \
     && rm /tmp/install-sarumc-plugins.sh
 
