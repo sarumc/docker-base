@@ -5,6 +5,10 @@ set -euo pipefail
 
 PLUGINS_DIR="${1:-/baked-plugins}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+# Fallback: read from Docker secret file if env var not set
+if [ -z "${GITHUB_TOKEN}" ] && [ -f /run/secrets/github_token ]; then
+    GITHUB_TOKEN=$(cat /run/secrets/github_token)
+fi
 REPOS=("SaruMC/core:SaruMC-core" "SaruMC/horus:SaruMC-horus")
 
 if [ -z "${GITHUB_TOKEN}" ]; then
