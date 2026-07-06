@@ -23,7 +23,7 @@ for entry in "${REPOS[@]}"; do
 
     ASSET_URL=$(curl -s -H "${AUTH}" \
         "https://api.github.com/repos/${repo}/releases/latest" \
-        | jq -r '.assets[0].browser_download_url // empty')
+        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0].browser_download_url // empty')
 
     if [ -z "${ASSET_URL}" ]; then
         echo "   !! No release assets for ${repo}, skipping."

@@ -17,7 +17,7 @@ RUN curl -fSL -o /tmp/Devirion.phar \
 # --- Commando virion ---
 RUN git clone --depth 1 https://github.com/CortexPE/Commando.git /tmp/commando \
     && mkdir -p virions/Commando/src \
-    && cp -r /tmp/commando/src/Commando virions/Commando/src/ \
+    && cp -r /tmp/commando/src/CortexPE/Commando virions/Commando/src/ \
     && cp /tmp/commando/virion.yml virions/Commando/ 2>/dev/null || true \
     && rm -rf /tmp/commando
 

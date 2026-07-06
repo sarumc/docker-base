@@ -35,7 +35,7 @@ resolve_github_release() {
     local repo="$1"
     curl -s ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
         "https://api.github.com/repos/${repo}/releases/latest" \
-        | jq -r '.assets[0].browser_download_url // empty'
+        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0].browser_download_url // empty'
 }
 
 download_github_archive() {
