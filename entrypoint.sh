@@ -31,11 +31,36 @@ normalize_github_ref() {
     echo "${ref}"
 }
 
-resolve_github_release() {
+# Download a GitHub release asset via API (handles private repos).
+# Returns: asset_name|temp_file_path, or empty on failure.
+download_github_asset() {
     local repo="$1"
-    curl -s ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
-        "https://api.github.com/repos/${repo}/releases/latest" \
-        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0].browser_download_url // empty'
+    local auth_header=""
+    [ -n "${GITHUB_TOKEN}" ] && auth_header="-H \"Authorization: Bearer ${GITHUB_TOKEN}\""
+
+    local release_json
+    release_json=$(curl -s ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
+        "https://api.github.com/repos/${repo}/releases/latest")
+
+    local asset_info
+    asset_info=$(echo "${release_json}" | jq -r \
+        '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.name)|\(.url)"')
+    local asset_name="${asset_info%%|*}"
+    local asset_api_url="${asset_info##*|}"
+
+    if [ -z "${asset_api_url}" ] || [ "${asset_api_url}" = "null" ]; then
+        echo ""
+        return
+    fi
+
+    local tmpfile="/tmp/plugin-dl-$$"
+    curl -fSL ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
+        -H "Accept: application/octet-stream" -o "${tmpfile}" "${asset_api_url}" || {
+        rm -f "${tmpfile}"
+        echo ""
+        return
+    }
+    echo "${asset_name}|${tmpfile}"
 }
 
 download_github_archive() {
@@ -97,10 +122,41 @@ download_plugin() {
         [ -z "${name}" ] && name=$(basename "${repo}")
         echo "   -> Fetching latest release from ${repo}..."
 
-        local asset_url
-        asset_url=$(resolve_github_release "${repo}")
-        if [ -n "${asset_url}" ]; then
-            download_plugin "${asset_url}" "${name}"
+        local result
+        result=$(download_github_asset "${repo}")
+        if [ -n "${result}" ]; then
+            local asset_name="${result%%|*}"
+            local dl_file="${result##*|}"
+            # Place based on extension
+            case "${asset_name}" in
+                *.phar)
+                    cp "${dl_file}" "${PLUGINS_DIR}/${name}.phar"
+                    echo "   -> ${name}.phar"
+                    ;;
+                *.zip|*.tar.gz|*.tgz)
+                    local extract_dir="/tmp/plugin-extract-$$"
+                    mkdir -p "${extract_dir}"
+                    if [[ "${asset_name}" == *.tar.gz ]] || [[ "${asset_name}" == *.tgz ]]; then
+                        tar xzf "${dl_file}" -C "${extract_dir}"
+                    else
+                        unzip -oq "${dl_file}" -d "${extract_dir}"
+                    fi
+                    local subfolders=("${extract_dir}"/*/)
+                    if [ ${#subfolders[@]} -eq 1 ] && [ -d "${subfolders[0]}" ]; then
+                        mv "${subfolders[0]}" "${PLUGINS_DIR}/${name}"
+                    else
+                        mkdir -p "${PLUGINS_DIR}/${name}"
+                        mv "${extract_dir}"/* "${PLUGINS_DIR}/${name}/"
+                    fi
+                    rm -rf "${extract_dir}"
+                    echo "   -> plugins/${name}/ (folder)"
+                    ;;
+                *)
+                    cp "${dl_file}" "${PLUGINS_DIR}/${name}.phar"
+                    echo "   -> ${name}.phar"
+                    ;;
+            esac
+            rm -f "${dl_file}"
             PLUGINS_ADDED=$((PLUGINS_ADDED + 1))
             return
         fi

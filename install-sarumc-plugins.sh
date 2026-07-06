@@ -21,18 +21,21 @@ for entry in "${REPOS[@]}"; do
     plugin_name="${entry##*:}"
     echo ":: Downloading ${repo} release..."
 
-    ASSET_URL=$(curl -s -H "${AUTH}" \
+    ASSET_JSON=$(curl -s -H "${AUTH}" \
         "https://api.github.com/repos/${repo}/releases/latest" \
-        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0].browser_download_url // empty')
+        | jq -r '[.assets[] | select(.name | test("\\.(phar|zip|tar\\.gz|tgz)$"; "i"))][0] | "\(.id) \(.name) \(.url)"')
+    ASSET_ID=$(echo "${ASSET_JSON}" | cut -d' ' -f1)
+    ASSET_NAME=$(echo "${ASSET_JSON}" | cut -d' ' -f2)
+    ASSET_API_URL=$(echo "${ASSET_JSON}" | cut -d' ' -f3)
 
-    if [ -z "${ASSET_URL}" ]; then
-        echo "   !! No release assets for ${repo}, skipping."
+    if [ -z "${ASSET_ID}" ] || [ "${ASSET_ID}" = "null" ]; then
+        echo "   !! No plugin assets for ${repo}, skipping."
         continue
     fi
 
-    echo "   -> ${ASSET_URL}"
+    echo "   -> ${ASSET_NAME} (asset #${ASSET_ID})"
     DL_FILE="/tmp/plugin-dl-$$"
-    curl -fSL -H "${AUTH}" -o "${DL_FILE}" "${ASSET_URL}"
+    curl -fSL -H "${AUTH}" -H "Accept: application/octet-stream" -o "${DL_FILE}" "${ASSET_API_URL}"
 
     case "${ASSET_URL}" in
         *.phar)
