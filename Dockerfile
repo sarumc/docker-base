@@ -32,7 +32,10 @@ RUN mkdir -p /baked-plugins \
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     /tmp/install-sarumc-plugins.sh /baked-plugins \
     && rm /tmp/install-sarumc-plugins.sh
-RUN cp -r virions /baked-virions \
+RUN mkdir -p /baked-virions /opt/pocketmine/virions \
+    && if [ -d virions ] && [ "$(ls -A virions 2>/dev/null)" ]; then \
+         cp -r virions/* /baked-virions/ ; \
+       fi \
     && chown -R pocketmine:pocketmine /baked-virions /opt/pocketmine/virions
 
 # Custom entrypoint wrapper
