@@ -1,90 +1,41 @@
-FROM php:8.2-cli
+FROM ghcr.io/pmmp/pocketmine-mp:latest
 
-# PMMP version - set to "latest" to auto-detect
-ARG PMMP_VERSION="latest"
+USER root
 
-# Install system deps + PHP extensions PMMP needs
-# Note: yaml extension optional — PMMP uses Symfony YAML fallback.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    unzip \
-    curl \
-    jq \
-    libzip-dev \
-    && docker-php-ext-install -j$(nproc) \
-        bcmath \
-        gmp \
-        sockets \
-        zip \
+    jq git unzip curl \
     && rm -rf /var/lib/apt/lists/*
 
-# PocketMine-MP setup
-ENV PMMP_DIR=/server
-WORKDIR ${PMMP_DIR}
-
-# Download PocketMine-MP phar
-RUN if [ "${PMMP_VERSION}" = "latest" ]; then \
-        PMMP_URL=$(curl -s https://api.github.com/repos/pmmp/PocketMine-MP/releases/latest \
-            | jq -r '.assets[] | select(.name | endswith(".phar")) | .browser_download_url'); \
-    else \
-        PMMP_URL="https://github.com/pmmp/PocketMine-MP/releases/download/${PMMP_VERSION}/PocketMine-MP.phar"; \
-    fi \
-    && echo "Downloading PMMP from: ${PMMP_URL}" \
-    && curl -fSL -o PocketMine-MP.phar "${PMMP_URL}" \
-    && chmod +x PocketMine-MP.phar
-
-# Create directory structure
-RUN mkdir -p plugins virions plugin_data worlds resource_packs
+WORKDIR /opt/pocketmine
 
 # --- Devirion (folder-based plugin loader) ---
-# Download latest Devirion phar from poggit
-RUN DEVIRION_URL=$(curl -s https://poggit.pmmp.io/releases.json?name=Devirion \
-        | jq -r '.[0].artifact_url // empty') \
-    && if [ -n "${DEVIRION_URL}" ]; then \
-        echo "Downloading Devirion from: ${DEVIRION_URL}" \
-        && curl -fSL -o plugins/Devirion.phar "${DEVIRION_URL}"; \
-    else \
-        echo "WARN: Devirion not found on poggit, trying GitHub..." \
-        && curl -fSL -o plugins/Devirion.phar \
-            "https://github.com/pmmp/Devirion/releases/latest/download/Devirion.phar"; \
-    fi
+RUN curl -fSL -o /tmp/Devirion.phar \
+        "https://poggit.pmmp.io/get/Devirion" \
+    || curl -fSL -o /tmp/Devirion.phar \
+        "https://github.com/pmmp/Devirion/releases/latest/download/Devirion.phar"
 
 # --- Commando virion ---
-# Clone CortexPE/Commando as virion (used by Devirion to inject into folder plugins)
 RUN git clone --depth 1 https://github.com/CortexPE/Commando.git /tmp/commando \
-    && mkdir -p virions/Commando \
-    && cp -r /tmp/commando/src/Commando virions/Commando/src 2>/dev/null || true \
+    && mkdir -p virions/Commando/src \
+    && cp -r /tmp/commando/src/Commando virions/Commando/src/ \
     && cp /tmp/commando/virion.yml virions/Commando/ 2>/dev/null || true \
     && rm -rf /tmp/commando
 
-# --- SaruMC private plugins ---
-# Script handles download from GitHub releases using token.
-# Token passed via BuildKit secret mount — never stored in image layers.
+# --- Assemble baked plugins ---
+# All built-in plugins go into /baked-plugins, then seeded to volume on first run.
 COPY install-sarumc-plugins.sh /tmp/install-sarumc-plugins.sh
+RUN mkdir -p /baked-plugins \
+    && cp /tmp/Devirion.phar /baked-plugins/Devirion.phar \
+    && chmod +x /tmp/install-sarumc-plugins.sh
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
-    chmod +x /tmp/install-sarumc-plugins.sh \
-    && /tmp/install-sarumc-plugins.sh "${PMMP_DIR}/plugins" \
+    /tmp/install-sarumc-plugins.sh /baked-plugins \
     && rm /tmp/install-sarumc-plugins.sh
+RUN cp -r virions /baked-virions
 
-# Copy entrypoint
+# Custom entrypoint wrapper
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Snapshot baked-in plugins for first-run volume initialization
-RUN cp -r plugins /baked-plugins \
-    && cp -r virions /baked-virions
-
-# Default server properties
-RUN echo "enable-query=on" > server.properties \
-    && echo "query-port=19132" >> server.properties \
-    && echo "motd=SaruMC Server" >> server.properties \
-    && echo "server-port=19132" >> server.properties \
-    && echo "max-players=20" >> server.properties
-
-# PocketMine-MP listens on 19132 UDP
-EXPOSE 19132/udp
-
-VOLUME ["/server/plugins", "/server/plugin_data", "/server/worlds", "/server/resource_packs"]
-
+USER pocketmine
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["--no-wizard", "--disable-readline"]
+CMD ["start-pocketmine"]

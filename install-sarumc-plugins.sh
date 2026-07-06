@@ -3,7 +3,7 @@
 # Requires GITHUB_TOKEN env var for private repo access.
 set -euo pipefail
 
-PLUGINS_DIR="${1:-/server/plugins}"
+PLUGINS_DIR="${1:-/baked-plugins}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 REPOS=("SaruMC/core:SaruMC-core" "SaruMC/horus:SaruMC-horus")
 

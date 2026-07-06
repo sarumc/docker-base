@@ -1,27 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PMMP_DIR="${PMMP_DIR:-/server}"
-PLUGINS_DIR="${PMMP_DIR}/plugins"
-VIRIONS_DIR="${PMMP_DIR}/virions"
+PLUGINS_DIR="/plugins"
+VIRIONS_DIR="/opt/pocketmine/virions"
 ADDITIONAL_PLUGINS="${ADDITIONAL_PLUGINS:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
-# --- First-run: seed baked plugins into volume if plugins dir is empty/new ---
-# Devirion.phar is our canary — if missing, volume needs seeding
+# --- First-run: seed baked plugins into /plugins volume ---
 if [ ! -f "${PLUGINS_DIR}/Devirion.phar" ]; then
     echo ":: First run — seeding baked plugins into volume..."
-    if [ -d /baked-plugins ]; then
-        cp -r /baked-plugins/* "${PLUGINS_DIR}/" 2>/dev/null || true
+    if [ -d /baked-plugins ] && [ "$(ls -A /baked-plugins 2>/dev/null)" ]; then
+        cp -r /baked-plugins/* "${PLUGINS_DIR}/"
     fi
-    if [ -d /baked-virions ]; then
-        cp -r /baked-virions/* "${VIRIONS_DIR}/" 2>/dev/null || true
+    if [ -d /baked-virions ] && [ "$(ls -A /baked-virions 2>/dev/null)" ]; then
+        mkdir -p "${VIRIONS_DIR}"
+        cp -r /baked-virions/* "${VIRIONS_DIR}/"
     fi
 fi
 
+# --- Runtime plugin helpers ---
 PLUGINS_ADDED=0
 
-# Normalize a GitHub reference (URL or owner/repo) to "owner/repo"
 normalize_github_ref() {
     local ref="$1"
     ref="${ref#https://github.com/}"
@@ -32,7 +31,6 @@ normalize_github_ref() {
     echo "${ref}"
 }
 
-# Resolve a GitHub repo to its latest release asset URL (or empty if none)
 resolve_github_release() {
     local repo="$1"
     curl -s ${GITHUB_TOKEN:+-H "Authorization: Bearer ${GITHUB_TOKEN}"} \
@@ -40,7 +38,6 @@ resolve_github_release() {
         | jq -r '.assets[0].browser_download_url // empty'
 }
 
-# Download a GitHub repo as zip archive (fallback when no release assets)
 download_github_archive() {
     local repo="$1" dest_name="$2"
     local archive_url="https://github.com/${repo}/archive/refs/heads/main.zip"
@@ -92,7 +89,7 @@ download_plugin() {
         rm -rf "${tmpfile}" "${extract_dir}"
         echo "   -> plugins/${name}/ (folder)"
 
-    # 3) GitHub reference: github.com URL OR owner/repo shorthand
+    # 3) GitHub reference: URL or owner/repo shorthand
     elif [[ "${src}" == github.com/* ]] || [[ "${src}" == http://github.com/* ]] || [[ "${src}" == https://github.com/* ]] \
       || ( [[ "${src}" == */* ]] && [[ "${src}" != */*/* ]] && [[ "${src}" != http://* ]] && [[ "${src}" != https://* ]] ); then
         local repo
@@ -103,16 +100,15 @@ download_plugin() {
         local asset_url
         asset_url=$(resolve_github_release "${repo}")
         if [ -n "${asset_url}" ]; then
-            # Recurse with the resolved asset URL
             download_plugin "${asset_url}" "${name}"
+            PLUGINS_ADDED=$((PLUGINS_ADDED + 1))
             return
         fi
-        # Fallback: download repo as zip
         echo "   !! No release assets for ${repo}, falling back to archive download..."
         download_github_archive "${repo}" "${name}"
         echo "   -> plugins/${name}/"
 
-    # 4) Generic URL (non-GitHub)
+    # 4) Generic URL
     elif [[ "${src}" == http://* ]] || [[ "${src}" == https://* ]]; then
         [ -z "${name}" ] && name=$(basename "${src}" | sed 's/\.[^.]*$//')
         local tmpfile="/tmp/plugin-dl-$$"
@@ -141,7 +137,7 @@ download_plugin() {
 
     else
         echo "   !! Unrecognized plugin source: ${src}"
-        echo "   Supported: .phar URL, archive URL, GitHub repo (owner/repo), generic URL"
+        echo "   Supported: .phar, .zip/.tar.gz, GitHub repo (owner/repo), URL"
         return 1
     fi
 
@@ -149,6 +145,7 @@ download_plugin() {
 }
 
 # --- Parse CLI args ---
+# Extract --add-plugin flags, pass everything else to POCKETMINE_ARGS
 PMMP_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -181,7 +178,9 @@ if [ ${PLUGINS_ADDED} -gt 0 ]; then
     echo ":: ${PLUGINS_ADDED} plugin(s) added at runtime."
 fi
 
-echo ":: Starting PocketMine-MP..."
-cd "${PMMP_DIR}"
+# Pass remaining args to start-pocketmine via POCKETMINE_ARGS
+export POCKETMINE_ARGS="${PMMP_ARGS[*]}"
 
-exec php PocketMine-MP.phar "${PMMP_ARGS[@]}"
+echo ":: Starting PocketMine-MP..."
+cd /opt/pocketmine
+exec start-pocketmine
